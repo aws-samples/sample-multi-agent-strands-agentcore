@@ -1,4 +1,4 @@
-# Clean Re:Invent Multi-Agent Tutorial
+# Re:Invent Multi-Agent Tutorial
 
 This directory contains **only the essential files** needed to run the four Re:Invent multi-agent notebooks.
 
