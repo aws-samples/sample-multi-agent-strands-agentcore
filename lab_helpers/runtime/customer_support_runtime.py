@@ -23,7 +23,7 @@ import uuid
 import requests
 
 # Initialize model and memory
-MODEL_ID = "amazon.nova-pro-v1:0"
+MODEL_ID = "us.amazon.nova-pro-v1:0"
 model = BedrockModel(model_id=MODEL_ID)
 memory_client = MemoryClient()
 memory_id = create_or_get_multi_agent_memory()

@@ -3,7 +3,7 @@ from strands import Agent
 from strands.models import BedrockModel
 from lab_helpers.lab1_multi_agent import route_to_agent, coordinate_multi_agent_response, ORCHESTRATOR_PROMPT
 
-MODEL_ID = "amazon.nova-pro-v1:0"
+MODEL_ID = "us.amazon.nova-pro-v1:0"
 model = BedrockModel(model_id=MODEL_ID)
 
 # Create orchestrator agent without memory hooks to avoid constructor issues

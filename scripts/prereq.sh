@@ -9,7 +9,7 @@ INFRA_STACK_NAME=${2:-MultiAgentStackInfra}
 COGNITO_STACK_NAME=${3:-MultiAgentStackCognito}
 INFRA_TEMPLATE_FILE="prerequisite/infrastructure.yaml"
 COGNITO_TEMPLATE_FILE="prerequisite/cognito.yaml"
-REGION=$(aws configure get region 2>/dev/null || echo "us-east-1")
+REGION=$(aws configure get region 2>/dev/null || echo "us-west-2")
 
 # Get AWS Account ID with proper error handling
 echo "🔍 Getting AWS Account ID..."
@@ -33,7 +33,7 @@ echo "Region: $REGION"
 echo "Account ID: $ACCOUNT_ID"
 # ----- 1. Create S3 bucket -----
 echo "🪣 Using S3 bucket: $FULL_BUCKET_NAME"
-if [ "$REGION" = "us-east-1" ]; then
+if [ "$REGION" = "us-west-2" ]; then
   aws s3api create-bucket \
     --bucket "$FULL_BUCKET_NAME" \
     2>/dev/null || echo "ℹ️ Bucket may already exist or be owned by you."

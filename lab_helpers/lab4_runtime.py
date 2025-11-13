@@ -16,7 +16,7 @@ from bedrock_agentcore.memory import MemoryClient
 import uuid
 
 # Initialize model and memory (following exact original pattern)
-MODEL_ID = "amazon.nova-pro-v1:0"
+MODEL_ID = "us.amazon.nova-pro-v1:0"
 model = BedrockModel(model_id=MODEL_ID)
 memory_client = MemoryClient()
 

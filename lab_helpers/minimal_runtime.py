@@ -9,7 +9,7 @@ from strands.models import BedrockModel
 import json
 
 # Initialize model
-MODEL_ID = "amazon.nova-pro-v1:0"
+MODEL_ID = "us.amazon.nova-pro-v1:0"
 model = BedrockModel(model_id=MODEL_ID)
 
 # Simple orchestrator prompt
