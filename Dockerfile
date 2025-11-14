@@ -16,10 +16,8 @@ RUN uv pip install -r requirements.txt
 RUN uv pip install aws-opentelemetry-distro>=0.10.1
 
 
-# Set AWS region environment variable
-
-ENV AWS_REGION=us-east-1
-ENV AWS_DEFAULT_REGION=us-east-1
+# AWS region will be set by runtime environment
+# Remove hardcoded region to support multi-region deployment
 
 
 # Signal that this is running in Docker for host binding logic
