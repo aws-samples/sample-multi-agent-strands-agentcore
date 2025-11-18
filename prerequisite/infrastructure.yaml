@@ -21,10 +21,7 @@ Parameters:
     Type: String
     MinLength: 1
     
-  LayerS3Key:
-    Type: String
-    Description: 'S3 key for the DDGS layer zip file'
-    MinLength: 1
+
     
 Resources:
 
@@ -303,18 +300,7 @@ Resources:
                   - dynamodb:DescribeTable
                 Resource: !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${WarrantyTable}
 
-  DDGSLayer:
-    Type: AWS::Lambda::LayerVersion
-    Properties:
-      LayerName: !Sub "${AWS::StackName}-ddgs-layer"
-      Description: 'DDGS package for Lambda functions'
-      Content:
-        S3Bucket: !Ref  LambdaS3Bucket
-        S3Key: !Ref LayerS3Key
-      CompatibleRuntimes:
-        - python3.12
-      CompatibleArchitectures:
-        - x86_64
+
 
   CustomerSupportLambda:
     Type: AWS::Lambda::Function
@@ -329,11 +315,7 @@ Resources:
       PackageType: Zip
       Architectures:
         - x86_64
-      Layers:
-        - !Ref DDGSLayer
-      Environment:
-        Variables:
-          PYTHONPATH: /opt/python
+      Timeout: 30
 
   
 # SSM Parameter to store warranty table name
