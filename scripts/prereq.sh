@@ -55,26 +55,14 @@ fi
 echo "✅ S3 bucket ownership verified"
 
 # ----- 2. Zip Lambda code -----
-echo "📦 Installing dependencies and zipping Lambda code..."
+echo "📦 Zipping contents of $LAMBDA_SRC into $ZIP_FILE..."
 # Get the script directory to handle relative paths correctly
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 
-# Create temp directory for Lambda package
-TEMP_DIR="$(mktemp -d)"
-cp -r "$PROJECT_ROOT/$LAMBDA_SRC"/* "$TEMP_DIR/"
-rm -f "$TEMP_DIR/$LAYER_ZIP_FILE" 2>/dev/null || true
-
-# Install ddgs and dependencies directly into the package
-echo "📦 Installing ddgs library with dependencies..."
-pip install ddgs -t "$TEMP_DIR" --quiet
-
-# Zip everything
-cd "$TEMP_DIR"
+cd "$PROJECT_ROOT/$LAMBDA_SRC"
 zip -r "$PROJECT_ROOT/$ZIP_FILE" . > /dev/null
 
-# Cleanup
-rm -rf "$TEMP_DIR"
 cd - > /dev/null
 
 # ----- 3. Upload to S3 -----
