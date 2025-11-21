@@ -87,20 +87,29 @@
 ## 🌐 Lab 5: Frontend Integration Questions
 *Tests customer-facing interface*
 
-### Natural Conversation Flow
-- "Hi, I need help with my electronics"
-- "I'm not very technical, can you explain things simply?"
-- "Can you walk me through this step by step?"
+Orchestrator Agent (Smart Routing)
+• "I need help with my order"
+• "My device won't turn on"
+• "Can I return this product?"
+• "How do I fix connectivity issues?"
+• "What's the warranty on laptops?"
 
-### Demo Scenarios (Built into Frontend)
-- **📦 Order Tracking**: "I need to track my order #12345"
-- **🔧 Technical Support**: "My device isn't working properly"
-- **💰 Billing Questions**: "I have a question about my bill"
 
-### User Experience Testing
-- "Can you help me find the right product for my needs?"
-- "I'm confused about your return process"
-- "What's the best way to contact technical support?"
+ Customer Support Agent
+• "What are the specs for your smartphones?"
+• "What's your return policy for headphones?"
+• "Do laptops come with warranty?"
+• "Can I get product information for monitors?"
+• "How long do I have to return accessories?"
+
+
+ Knowledge Base Agent (Technical Support)
+• "My laptop is overheating and running slow"
+• "Device performance is very poor"
+• "Battery drains too quickly"
+• "WiFi keeps disconnecting"
+• "Computer is running very slow"
+
 
 ---
 
