@@ -7,11 +7,55 @@ from bedrock_agentcore.runtime import BedrockAgentCoreApp  #### AGENTCORE RUNTIM
 from strands import Agent
 from strands.models import BedrockModel
 from lab_helpers.utils import get_ssm_parameter
-from lab_helpers.lab1_multi_agent import (
-    route_to_agent,
-    coordinate_multi_agent_response,
-    ORCHESTRATOR_PROMPT
-)
+from strands import tool
+
+# Self-contained tools for runtime
+@tool
+def route_to_agent(query: str, agent_type: str = None) -> str:
+    """Route a customer query to the appropriate specialized agent."""
+    query_lower = query.lower()
+    
+    if agent_type:
+        return f"Routing to {agent_type} agent: {query}"
+    
+    technical_keywords = ['troubleshoot', 'error', 'not working', 'broken', 'fix', 'technical', 'support', 'issue', 'problem']
+    service_keywords = ['return', 'refund', 'warranty', 'policy', 'order', 'shipping', 'product info', 'specifications']
+    
+    if any(keyword in query_lower for keyword in technical_keywords):
+        return f"Routing to knowledge_base agent for technical support: {query}"
+    elif any(keyword in query_lower for keyword in service_keywords):
+        return f"Routing to customer_support agent for general support: {query}"
+    else:
+        return f"Routing to customer_support agent for general inquiry: {query}"
+
+@tool
+def coordinate_multi_agent_response(responses: list) -> str:
+    """Coordinate and synthesize responses from multiple agents."""
+    if not responses:
+        return "No responses received from agents."
+    
+    if len(responses) == 1:
+        return responses[0]
+    
+    coordinated = "Based on input from our specialized agents:\n\n"
+    for i, response in enumerate(responses, 1):
+        coordinated += f"Agent {i}: {response}\n\n"
+    
+    coordinated += "This coordinated response provides comprehensive support for your inquiry."
+    return coordinated
+
+ORCHESTRATOR_PROMPT = """You are an intelligent orchestrator agent for a customer support system.
+
+IMPORTANT: You MUST use the routing tools to analyze and route customer queries.
+
+For ANY customer query, you MUST call route_to_agent() to determine the best agent.
+If multiple agents are needed, use coordinate_multi_agent_response().
+
+Available tools:
+1. route_to_agent(query, agent_type) - REQUIRED to analyze and route customer queries
+2. coordinate_multi_agent_response(responses) - Use when combining multiple agent responses
+
+Always call route_to_agent() first to properly analyze the customer's request."""
 from lab_helpers.lab2_multi_agent_memory import (
     MultiAgentMemoryHooks,
     create_or_get_multi_agent_memory
@@ -22,7 +66,7 @@ import json
 
 # Initialize model and memory
 MODEL_ID = "us.amazon.nova-pro-v1:0"
-model = BedrockModel(model_id=MODEL_ID)
+model = BedrockModel(model_id=MODEL_ID, temperature=0.1)
 memory_client = MemoryClient()
 memory_id = create_or_get_multi_agent_memory()
 
