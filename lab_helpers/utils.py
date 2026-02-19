@@ -21,7 +21,8 @@ policy_name = f"AgentCorePolicy-{REGION}"
 
 
 def get_ssm_parameter(name: str, with_decryption: bool = True) -> str:
-    ssm = boto3.client("ssm")
+    region = os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'us-west-2'))
+    ssm = boto3.client("ssm", region_name=region)
     response = ssm.get_parameter(Name=name, WithDecryption=with_decryption)
     return response["Parameter"]["Value"]
 
@@ -29,7 +30,8 @@ def get_ssm_parameter(name: str, with_decryption: bool = True) -> str:
 def put_ssm_parameter(
     name: str, value: str, parameter_type: str = "String", with_encryption: bool = False
 ) -> None:
-    ssm = boto3.client("ssm")
+    region = os.environ.get('AWS_REGION', os.environ.get('AWS_DEFAULT_REGION', 'us-west-2'))
+    ssm = boto3.client("ssm", region_name=region)
     put_params = {
         "Name": name,
         "Value": value,
