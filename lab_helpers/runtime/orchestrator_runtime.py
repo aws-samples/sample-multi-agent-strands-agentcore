@@ -1,68 +1,38 @@
-"""
-Orchestrator Runtime for Multi-Agent System
-Handles request routing and coordination across specialized agents
-"""
+import os
+import urllib.parse
+import uuid
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp  #### AGENTCORE RUNTIME - LINE 1 ####
-from strands import Agent
-from strands.models import BedrockModel
-from lab_helpers.utils import get_ssm_parameter
-from strands import tool
-
-# Self-contained tools for runtime
-@tool
-def route_to_agent(query: str, agent_type: str = None) -> str:
-    """Route a customer query to the appropriate specialized agent."""
-    query_lower = query.lower()
-    
-    if agent_type:
-        return f"Routing to {agent_type} agent: {query}"
-    
-    technical_keywords = ['troubleshoot', 'error', 'not working', 'broken', 'fix', 'technical', 'support', 'issue', 'problem']
-    service_keywords = ['return', 'refund', 'warranty', 'policy', 'order', 'shipping', 'product info', 'specifications']
-    
-    if any(keyword in query_lower for keyword in technical_keywords):
-        return f"Routing to knowledge_base agent for technical support: {query}"
-    elif any(keyword in query_lower for keyword in service_keywords):
-        return f"Routing to customer_support agent for general support: {query}"
-    else:
-        return f"Routing to customer_support agent for general inquiry: {query}"
-
-@tool
-def coordinate_multi_agent_response(responses: list) -> str:
-    """Coordinate and synthesize responses from multiple agents."""
-    if not responses:
-        return "No responses received from agents."
-    
-    if len(responses) == 1:
-        return responses[0]
-    
-    coordinated = "Based on input from our specialized agents:\n\n"
-    for i, response in enumerate(responses, 1):
-        coordinated += f"Agent {i}: {response}\n\n"
-    
-    coordinated += "This coordinated response provides comprehensive support for your inquiry."
-    return coordinated
-
-ORCHESTRATOR_PROMPT = """You are an intelligent orchestrator agent for a customer support system.
-
-IMPORTANT: You MUST use the routing tools to analyze and route customer queries.
-
-For ANY customer query, you MUST call route_to_agent() to determine the best agent.
-If multiple agents are needed, use coordinate_multi_agent_response().
-
-Available tools:
-1. route_to_agent(query, agent_type) - REQUIRED to analyze and route customer queries
-2. coordinate_multi_agent_response(responses) - Use when combining multiple agent responses
-
-Always call route_to_agent() first to properly analyze the customer's request."""
+import boto3
+from bedrock_agentcore.memory import MemoryClient
+from bedrock_agentcore.runtime import BedrockAgentCoreApp, RequestContext
 from lab_helpers.lab2_multi_agent_memory import (
     MultiAgentMemoryHooks,
-    create_or_get_multi_agent_memory
+    create_or_get_multi_agent_memory,
 )
-from bedrock_agentcore.memory import MemoryClient
-import uuid
-import json
+from strands import Agent
+from strands.models import BedrockModel
+from strands_tools.a2a_client import A2AClientToolProvider
+
+
+def get_agent_url(agent_type: str) -> str:
+    agent_arn = os.environ[f"AGENTCORE_{agent_type.upper()}_ARN"]
+    region = boto3.session.Session().region_name or "us-west-2"
+
+    encoded_arn = urllib.parse.quote(agent_arn, safe='')
+    url = f"https://bedrock-agentcore.{region}.amazonaws.com/runtimes/{encoded_arn}/invocations/"
+    return url
+
+def get_a2a_providers(agent_arns: list[str], bearer_token: str) -> A2AClientToolProvider:
+    httpx_client_args = {
+        "headers": {
+            "Authorization": f"Bearer {bearer_token}",
+        },
+        "timeout": 300
+    }
+    return A2AClientToolProvider(
+        known_agent_urls=agent_arns,
+        httpx_client_args=httpx_client_args
+    )
 
 # Initialize model and memory
 MODEL_ID = "us.amazon.nova-pro-v1:0"
@@ -78,25 +48,48 @@ memory_hooks = MultiAgentMemoryHooks(
     agent_type="orchestrator"
 )
 
-# Create orchestrator agent with routing tools
-orchestrator = Agent(
-    model=model,
-    tools=[route_to_agent, coordinate_multi_agent_response],
-    system_prompt=ORCHESTRATOR_PROMPT,
-    hooks=[memory_hooks]
-)
+# Create orchestrator agent with A2A tools
+ORCHESTRATOR_PROMPT = """You are an intelligent orchestrator agent for a customer support system."""
+
+# Try to get agent URLs from environment (for AgentCore Runtime)
+# If not available (Lab 5), skip this initialization
+AGENT_URLS = []
+try:
+    agents = [
+        'customer_support',
+        'knowledge_base'
+    ]
+    AGENT_URLS = [get_agent_url(agent) for agent in agents]
+    print(f"Agent URLs: {AGENT_URLS}")
+except KeyError:
+    # Environment variables not set - running in local mode (Lab 5)
+    print("Running in local mode - agent URLs will be initialized on demand")
 
 # Initialize the AgentCore Runtime App
-app = BedrockAgentCoreApp()  #### AGENTCORE RUNTIME - LINE 2 ####
+app = BedrockAgentCoreApp()
 
-@app.entrypoint  #### AGENTCORE RUNTIME - LINE 3 ####
-def invoke(payload):
-    """Orchestrator Runtime entrypoint - routes requests to appropriate agents"""
+@app.entrypoint
+def invoke(payload, context: RequestContext):
+    # Extract bearer token from request headers via AgentCore RequestContext
+    request_headers = context.request_headers
+    auth_header = request_headers.get("Authorization", "")
+    bearer_token = auth_header.removeprefix("Bearer ").strip()
+    print(bearer_token[:20])
+    if not bearer_token:
+        raise ValueError("Missing Authorization bearer token in request headers")
+
+    provider = get_a2a_providers(AGENT_URLS, bearer_token)
+
+    orchestrator = Agent(
+        model=model,
+        tools=[provider.tools],
+        system_prompt=ORCHESTRATOR_PROMPT,
+        hooks=[memory_hooks]
+    )
+
     user_input = payload.get("prompt", "")
-
-    # Use orchestrator to determine routing and coordinate response
     response = orchestrator(user_input)
     return response.message["content"][0]["text"]
 
 if __name__ == "__main__":
-    app.run()  #### AGENTCORE RUNTIME - LINE 4 ####
+    app.run()

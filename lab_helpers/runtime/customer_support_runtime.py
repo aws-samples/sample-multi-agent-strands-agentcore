@@ -1,15 +1,22 @@
 """
 Customer Support Agent Runtime
-Specialized service for customer support queries with gateway integration
+Specialized service for customer support queries with gateway integration using A2A protocol
 """
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp  #### AGENTCORE RUNTIME - LINE 1 ####
+import logging
+import os
 from strands import Agent
 from strands.models import BedrockModel
+from strands.multiagent.a2a import A2AServer
 from strands.tools.mcp import MCPClient
 from mcp.client.streamable_http import streamablehttp_client
 from lab_helpers.utils import get_ssm_parameter, get_cognito_client_secret
 from strands import tool
+import uvicorn
+from fastapi import FastAPI
+import requests
+
+logging.basicConfig(level=logging.INFO)
 
 # Self-contained tools for runtime
 @tool(
@@ -117,27 +124,10 @@ Available tools:
 2. get_return_policy(product_category) - REQUIRED for all return, refund, warranty policy questions
 
 Always call the appropriate tool first, then provide a helpful response based on the tool results."""
-from lab_helpers.lab2_multi_agent_memory import (
-    MultiAgentMemoryHooks,
-    create_or_get_multi_agent_memory
-)
-from bedrock_agentcore.memory import MemoryClient
-import uuid
-import requests
 
-# Initialize model and memory
+# Initialize model
 MODEL_ID = "us.amazon.nova-pro-v1:0"
 model = BedrockModel(model_id=MODEL_ID, temperature=0.1)
-memory_client = MemoryClient()
-memory_id = create_or_get_multi_agent_memory()
-
-# Create customer support specific memory hooks
-SESSION_ID = str(uuid.uuid4())
-CUSTOMER_ID = "customer_001"
-memory_hooks = MultiAgentMemoryHooks(
-    memory_id, memory_client, CUSTOMER_ID, SESSION_ID,
-    agent_type="customer_support"
-)
 
 # Gateway integration (from Lab 3)
 def get_token(client_id: str, client_secret: str, scope_string: str, url: str) -> dict:
@@ -174,26 +164,62 @@ try:
     gateway_tools = mcp_client.list_tools_sync()
     all_tools = [get_product_info, get_return_policy] + gateway_tools
 except Exception as e:
-    print(f"Gateway integration failed: {e}")
+    logging.warning(f"Gateway integration failed: {e}")
     all_tools = [get_product_info, get_return_policy]
 
 # Create customer support agent
 customer_support_agent = Agent(
+    name="Customer Support Agent",
+    description="A customer support agent that handles product information, return policies, warranties, and general customer inquiries.",
     model=model,
     tools=all_tools,
     system_prompt=CUSTOMER_SUPPORT_PROMPT,
-    hooks=[memory_hooks]
+    callback_handler=None
 )
 
-# Initialize the AgentCore Runtime App
-app = BedrockAgentCoreApp()  #### AGENTCORE RUNTIME - LINE 2 ####
+# Get runtime URL from environment (set by Bedrock AgentCore Runtime)
+runtime_url = os.environ.get('AGENTCORE_RUNTIME_URL', 'http://0.0.0.0:9000/')
+logging.info(f"A2A Server URL: {runtime_url}")
 
-@app.entrypoint  #### AGENTCORE RUNTIME - LINE 3 ####
-def invoke(payload):
-    """Customer Support Agent Runtime entrypoint"""
-    user_input = payload.get("prompt", "")
-    response = customer_support_agent(user_input)
-    return response.message["content"][0]["text"]
+host, port = "0.0.0.0", 9000
+
+# Create A2A server
+a2a_server = A2AServer(
+    agent=customer_support_agent,
+    http_url=runtime_url,
+    serve_at_root=True  # Serves at root (/) for AgentCore Runtime
+)
+
+app = FastAPI()
+
+@app.get("/ping")
+def ping():
+    return {"status": "healthy"}
+
+app.mount("/", a2a_server.to_fastapi_app())
+
+# Wrapper function for local testing (Lab 5)
+def customer_support_agent(prompt: str):
+    """Local wrapper for customer support agent - for UI testing"""
+    # Create a simple agent without Gateway for local use
+    from strands import Agent
+    from strands.models import BedrockModel
+    
+    model = BedrockModel(model_id="us.amazon.nova-pro-v1:0", temperature=0.1)
+    
+    # Use only the self-contained tools (no Gateway)
+    local_tools = [get_product_info, get_return_policy, check_warranty_status]
+    
+    agent = Agent(
+        name="Customer Support Agent",
+        description="A customer support agent for product info, returns, and warranties",
+        model=model,
+        tools=local_tools,
+        system_prompt=CUSTOMER_SUPPORT_PROMPT,
+        callback_handler=None
+    )
+    
+    return agent(prompt)
 
 if __name__ == "__main__":
-    app.run()  #### AGENTCORE RUNTIME - LINE 4 ####
+    uvicorn.run(app, host=host, port=port)

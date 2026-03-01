@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Multi-Agent UI for Lab-4 Runtime Integration
-Connects to orchestrator, customer support, and knowledge base agents
+Connects to deployed orchestrator, customer support, and knowledge base agents via HTTP
 """
 
 try:
@@ -18,16 +18,54 @@ except ImportError:
     import time
     import json
 
-# Import the agent runtimes
-from lab_helpers.runtime.orchestrator_runtime import orchestrator
-from lab_helpers.runtime.customer_support_runtime import customer_support_agent
-from lab_helpers.runtime.knowledge_base_runtime import knowledge_base_agent
+import requests
+import urllib.parse
+from uuid import uuid4
+import boto3
+from lab_helpers.utils import get_ssm_parameter, setup_or_reuse_cognito_user_pool
+
+# Get region
+session = boto3.Session()
+REGION = session.region_name or "us-west-2"
+
+# A2A agents require JSON-RPC 2.0 format
+A2A_AGENTS = ["customer_support", "knowledge_base"]
 
 class MultiAgentUI:
     def __init__(self):
         self.messages = []
         self.current_agent = "orchestrator"
+        # Cache for agent ARNs and bearer token (lazy initialization)
+        self._agent_arns = {}
+        self._bearer_token = None
+        self._cognito_config = None
         self.setup_ui()
+    
+    def _get_agent_arn(self, agent_type):
+        """Get agent ARN from cache or SSM (lazy initialization)"""
+        if agent_type not in self._agent_arns:
+            try:
+                self._agent_arns[agent_type] = get_ssm_parameter(f"/app/reinvent/agentcore/{agent_type}_arn")
+            except Exception as e:
+                raise Exception(f"Failed to get {agent_type} ARN from SSM: {e}")
+        return self._agent_arns[agent_type]
+    
+    def _get_bearer_token(self):
+        """Get bearer token from Cognito (lazy initialization)"""
+        if self._bearer_token is None:
+            try:
+                # Get fresh Cognito config with bearer token
+                # This reuses existing pool and gets a fresh token
+                if self._cognito_config is None:
+                    self._cognito_config = setup_or_reuse_cognito_user_pool()
+                
+                self._bearer_token = self._cognito_config.get('Bearer Token')
+                if not self._bearer_token:
+                    raise Exception("Bearer token not found in Cognito config")
+                    
+            except Exception as e:
+                raise Exception(f"Failed to get bearer token from Cognito: {e}")
+        return self._bearer_token
     
     def setup_ui(self):
         # Title
@@ -112,28 +150,79 @@ class MultiAgentUI:
             print(f"🔄 Processing with {self.current_agent} agent...")
         
         try:
-            # Route to appropriate agent
-            if self.current_agent == "orchestrator":
-                response = orchestrator(message)
-                agent_info = "🎯 Orchestrator Agent"
-            elif self.current_agent == "customer_support":
-                response = customer_support_agent(message)
-                agent_info = "🛍️ Customer Support Agent"
-            elif self.current_agent == "knowledge_base":
-                response = knowledge_base_agent(message)
-                agent_info = "🔧 Knowledge Base Agent"
+            # Get agent ARN and bearer token using lazy initialization
+            agent_arn = self._get_agent_arn(self.current_agent)
+            bearer_token = self._get_bearer_token()
+            
+            # Build invocation URL
+            encoded_arn = urllib.parse.quote(agent_arn, safe='')
+            url = f"https://bedrock-agentcore.{REGION}.amazonaws.com/runtimes/{encoded_arn}/invocations/"
+            
+            # Prepare payload based on agent type
+            if self.current_agent in A2A_AGENTS:
+                # A2A agents use JSON-RPC 2.0 format
+                message_id = str(uuid4())
+                session_id = str(uuid4())
+                
+                payload = {
+                    "jsonrpc": "2.0",
+                    "id": message_id,
+                    "method": "message/send",
+                    "params": {
+                        "message": {
+                            "role": "user",
+                            "parts": [{"kind": "text", "text": message}],
+                            "messageId": message_id
+                        }
+                    }
+                }
+                
+                headers = {
+                    "Authorization": f"Bearer {bearer_token}",
+                    "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": session_id,
+                    "Content-Type": "application/json"
+                }
+            else:
+                # Orchestrator uses simple prompt format
+                payload = {"prompt": message}
+                headers = {
+                    "Authorization": f"Bearer {bearer_token}",
+                    "Content-Type": "application/json"
+                }
+            
+            # Make HTTP request
+            response = requests.post(url, json=payload, headers=headers, timeout=300)
+            response.raise_for_status()
+            result = response.json()
             
             # Extract response text
-            if hasattr(response, 'message'):
-                response_text = response.message["content"][0]["text"]
+            if self.current_agent in A2A_AGENTS and "result" in result:
+                # Extract from A2A response format
+                response_text = ""
+                if "artifacts" in result["result"]:
+                    for artifact in result["result"]["artifacts"]:
+                        if "parts" in artifact:
+                            for part in artifact["parts"]:
+                                if part.get("kind") == "text":
+                                    response_text = part.get("text", "")
+                                    break
+                if not response_text:
+                    response_text = str(result)
             else:
-                response_text = str(response)
+                # Orchestrator response
+                response_text = str(result)
             
-            formatted_response = f"**{agent_info} Response:**\n\n{response_text}"
+            agent_names = {
+                'orchestrator': '🎯 Orchestrator Agent',
+                'customer_support': '🛍️ Customer Support Agent',
+                'knowledge_base': '🔧 Knowledge Base Agent'
+            }
+            
+            formatted_response = f"**{agent_names[self.current_agent]} Response:**\n\n{response_text}"
             self.add_message("assistant", formatted_response)
             
         except Exception as e:
-            error_msg = f"❌ Error processing request: {str(e)}\n\nPlease ensure all lab-4 prerequisites are set up correctly."
+            error_msg = f"❌ Error processing request: {str(e)}\n\nPlease ensure all lab-4 agents are deployed and the Cognito token is valid."
             self.add_message("assistant", error_msg)
     
     def update_chat(self):

@@ -5,6 +5,12 @@ echo "=========================================="
 echo "Multi-Agent Workshop Setup"
 echo "=========================================="
 
+# Install zip utility
+echo "Installing zip utility..."
+sudo apt-get update && sudo apt-get install -y zip
+echo "✅ zip installed"
+echo ""
+
 # Get AWS Account Info
 REGION=$(aws configure get region 2>/dev/null || echo "us-west-2")
 ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)

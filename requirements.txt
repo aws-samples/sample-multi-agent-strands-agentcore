@@ -1,5 +1,6 @@
-strands-agents
+strands-agents[a2a]
 strands-agents-tools
+strands-agents-tools[a2a_client]
 boto3
 botocore
 bedrock-agentcore
@@ -7,3 +8,6 @@ bedrock-agentcore-starter-toolkit
 aws-opentelemetry-distro
 ddgs
 pyyaml
+httpx
+uvicorn
+fastapi
