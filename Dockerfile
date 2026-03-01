@@ -29,6 +29,7 @@ USER bedrock_agentcore
 
 EXPOSE 8080
 EXPOSE 8000
+EXPOSE 9000
 
 # Copy entire project (respecting .dockerignore)
 COPY . .

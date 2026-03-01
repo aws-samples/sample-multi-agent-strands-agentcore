@@ -1,13 +1,18 @@
 """
 Knowledge Base Agent Runtime
-Specialized service for technical support using Bedrock Knowledge Base
+Specialized service for technical support using A2A protocol
 """
 
-from bedrock_agentcore.runtime import BedrockAgentCoreApp  #### AGENTCORE RUNTIME - LINE 1 ####
+import logging
+import os
 from strands import Agent
 from strands.models import BedrockModel
-from lab_helpers.utils import get_ssm_parameter
+from strands.multiagent.a2a import A2AServer
 from strands import tool
+import uvicorn
+from fastapi import FastAPI
+
+logging.basicConfig(level=logging.INFO)
 
 
 # Self-contained tools for runtime
@@ -41,44 +46,44 @@ Available tools:
 1. get_technical_support(issue_description) - REQUIRED for all technical questions, troubleshooting, and support
 
 Always call get_technical_support() first, then provide helpful guidance based on the knowledge base results."""
-from lab_helpers.lab2_multi_agent_memory import (
-    MultiAgentMemoryHooks,
-    create_or_get_multi_agent_memory
-)
-from bedrock_agentcore.memory import MemoryClient
-import uuid
 
-# Initialize model and memory
+# Initialize model
 MODEL_ID = "us.amazon.nova-pro-v1:0"
 model = BedrockModel(model_id=MODEL_ID, temperature=0.1)
-memory_client = MemoryClient()
-memory_id = create_or_get_multi_agent_memory()
-
-# Create knowledge base specific memory hooks
-SESSION_ID = str(uuid.uuid4())
-CUSTOMER_ID = "customer_001"
-memory_hooks = MultiAgentMemoryHooks(
-    memory_id, memory_client, CUSTOMER_ID, SESSION_ID,
-    agent_type="knowledge_base"
-)
 
 # Create knowledge base agent
 knowledge_base_agent = Agent(
+    name="Knowledge Base Agent",
+    description="A technical support agent that provides troubleshooting guidance and technical solutions for common device issues.",
     model=model,
     tools=[get_technical_support],
     system_prompt=KNOWLEDGE_BASE_PROMPT,
-    hooks=[memory_hooks]
+    callback_handler=None
 )
 
-# Initialize the AgentCore Runtime App
-app = BedrockAgentCoreApp()  #### AGENTCORE RUNTIME - LINE 2 ####
+# Get runtime URL from environment (set by Bedrock AgentCore Runtime)
+runtime_url = os.environ.get('AGENTCORE_RUNTIME_URL', 'http://0.0.0.0:9000/')
+logging.info(f"A2A Server URL: {runtime_url}")
 
-@app.entrypoint  #### AGENTCORE RUNTIME - LINE 3 ####
-def invoke(payload):
-    """Knowledge Base Agent Runtime entrypoint"""
-    user_input = payload.get("prompt", "")
-    response = knowledge_base_agent(user_input)
-    return response.message["content"][0]["text"]
+host, port = "0.0.0.0", 9000
+
+# Create A2A server
+a2a_server = A2AServer(
+    agent=knowledge_base_agent,
+    http_url=runtime_url,
+    serve_at_root=True  # Serves at root (/) for AgentCore Runtime
+)
+
+app = FastAPI()
+
+@app.get("/ping")
+def ping():
+    return {"status": "healthy"}
+
+app.mount("/", a2a_server.to_fastapi_app())
+
+# Export the agent for local testing (Lab 5)
+# The agent is already created above, so we can just reference it directly
 
 if __name__ == "__main__":
-    app.run()  #### AGENTCORE RUNTIME - LINE 4 ####
+    uvicorn.run(app, host=host, port=port)
